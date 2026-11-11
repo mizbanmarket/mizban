@@ -38,31 +38,45 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const num=s=>+String(s||'').replace(/[۰-۹]/g,d=>d.charCodeAt(0)-1776).replace(/[٠-٩]/g,d=>d.charCodeAt(0)-1632).replace(/[,٬\s]/g,'')||0;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=m=>{const t=$('#T');t.textContent=m;t.className='on';setTimeout(()=>t.className='',2200)};
-let BL=[],BS='',BP='',BD='',tab='home',cart=[],sc='',paid='',q='',ed='',arm='';
+let disc='',BL=[],BS='',BP='',BD='',tab='home',cart=[],sc='',paid='',q='',ed='',arm='';
 const TABS=[['home','🏠 خانه'],['sale','🛒 فروش'],['stock','🏬 انبار'],['cust','👥 مشتری'],['rep','📊 گزارش']];
 const flt=a=>q?a.filter(p=>(p.name+' '+(p.barcode||'')).includes(q)):a;
 /* ---- scanner ---- */
-let stream=null,lastc='',lt=0;
+let stream=null,lastc='',lt=0,lib=null;
+function hit(c){if(c===lastc&&Date.now()-lt<2000)return;lastc=c;lt=Date.now();try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}const m=scan.cb(c);if(!m)stop();else $('#SM').textContent=m}
+function loadLib(){return new Promise((ok,no)=>{if(window.Html5Qrcode)return ok();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+async function lib2(){
+ if(lib||!$('#R2'))return;
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+ const v=$('#V');if(v)v.style.display='none';
+ $('#SM').textContent='در حال راه‌اندازی اسکنر دوم...';
+ try{await loadLib();
+  const F=Html5QrcodeSupportedFormats;
+  lib=new Html5Qrcode('R2',{verbose:false,useBarCodeDetectorIfSupported:false,formatsToSupport:[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.CODE_39,F.QR_CODE]});
+  await lib.start({facingMode:'environment'},{fps:10,qrbox:{width:280,height:150}},t=>hit(t),()=>{});
+  $('#SM').textContent='بارکد را داخل کادر نگه دارید';
+ }catch(e){lib=null;$('#SM').textContent='اسکنر دوم اجرا نشد (بار اول اینترنت لازم است). بارکد را دستی بنویسید.'}
+}
 async function scan(cb){
+ scan.cb=cb;lastc='';
  $('#M').className='on';
- $('#M').innerHTML='<div class="box"><video id="V" playsinline muted></video><p id="SM" class="mu"></p><div class="row"><input id="SB" inputmode="numeric" placeholder="یا بارکد را دستی بنویسید"><button data-a="sok">تأیید</button></div><button data-a="sx" style="width:100%">بستن</button></div>';
- scan.cb=cb;
+ $('#M').innerHTML='<div class="box"><video id="V" playsinline muted></video><div id="R2" style="width:100%"></div><p id="SM" class="mu"></p><div class="row"><input id="SB" inputmode="numeric" placeholder="یا بارکد را دستی بنویسید"><button data-a="sok">تأیید</button></div><button data-a="sc2" style="width:100%">🔁 اسکنر دوم</button><button data-a="sx" style="width:100%">بستن</button></div>';
  try{
-  if(!window.BarcodeDetector)throw 0;
+  if(!window.BarcodeDetector||!(await BarcodeDetector.getSupportedFormats()).length)throw 'nb';
   const det=new BarcodeDetector();
-  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});
   const v=$('#V');v.srcObject=stream;await v.play();
+  $('#SM').textContent='بارکد را داخل تصویر نگه دارید';
+  let errs=0;const t0=Date.now();
   const loop=async()=>{
    if(!stream)return;
-   try{const r=await det.detect(v);
-    if(r.length){const c=r[0].rawValue;
-     if(c!==lastc||Date.now()-lt>2000){lastc=c;lt=Date.now();const m=cb(c);
-      if(!m){stop();return}$('#SM').textContent=m}}}catch(e){}
+   try{const r=await det.detect(v);if(r.length)hit(r[0].rawValue)}catch(e){if(++errs>2){lib2();return}}
+   if(Date.now()-t0>6000&&!lastc){lib2();return}
    setTimeout(loop,250)};
   loop();
- }catch(e){$('#SM').textContent='دوربین در دسترس نیست؛ بارکد را دستی بنویسید.';$('#V').style.display='none'}
+ }catch(e){if(e==='nb')lib2();else{const v=$('#V');if(v)v.style.display='none';$('#SM').textContent='دوربین در دسترس نیست؛ بارکد را دستی بنویسید.'}}
 }
-function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('#M').className='';$('#M').innerHTML=''}
+function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}if(lib){const l=lib;lib=null;try{l.stop().then(()=>l.clear()).catch(()=>{})}catch(e){}}$('#M').className='';$('#M').innerHTML=''}
 /* ---- lists ---- */
 const LS=()=>q?flt(D.p).slice(0,8).map(p=>`<div class="r"><span>${esc(p.name)} <span class="mu">${f(p.sell)}</span></span><button data-a="add" data-i="${p.id}">+ افزودن</button></div>`).join(''):'';
 const PL=()=>flt(D.p).map(p=>`<div class="r"><span><b>${esc(p.name)}</b><br><span class="mu">${esc(p.barcode||'بدون بارکد')} · خرید ${f(p.buy)} · فروش ${f(p.sell)} · موجودی ${f(p.stock)}</span></span><span><button data-a="pedit" data-i="${p.id}">ویرایش</button> <button class="dn" data-a="pdel" data-i="${p.id}">${arm==p.id?'مطمئنید؟':'حذف'}</button></span></div>`).join('')||'<p class="mu">کالایی ثبت نشده است</p>';
@@ -74,7 +88,7 @@ return `<div class="cd"><b>تحلیل کالا</b><p>سود کل ثبت‌شده
 const V={
 home(){const t0=new Date().setHours(0,0,0,0),td=D.i.filter(v=>v.t>=t0).reduce((s,v)=>s+v.tot-(v.rtot||0),0),cash=D.tx.reduce((s,x)=>s+(x.k=='in'?x.a:-x.a),0),today=new Date().toISOString().slice(0,10),dn=D.nt.filter(n=>n.d&&!n.ok&&n.d<=today).length;
  const T=[['sale','🧾','فاکتور فروش'],['buy','🛒','فاکتور خرید'],['prod','🏷️','کالاها'],['stock','🏬','انبار'],['cust','👥','مشتری‌ها'],['exp','💸','هزینه'],['chq','✍️','چک'],['txs','💰','تراکنش‌ها'],['note','⏰','یادآور'+(dn?' ('+f(dn)+')':'')],['rep','📊','گزارش‌گیری']];
- return `<h2>سوپرمارکت میزبان</h2><div class='cd'>فروش امروز: <b>${f(td)}</b> تومان<br>موجودی صندوق: <b>${f(cash)}</b> تومان<br>طلب از مشتری‌ها: <b>${f(D.c.reduce((s,c)=>s+Math.max(c.balance,0),0))}</b><br>بدهی به تأمین‌کننده‌ها: <b>${f(D.s.reduce((s,c)=>s+Math.max(c.balance,0),0))}</b></div><div class='g'>${T.map(t=>`<button data-a='tab' data-i='${t[0]}'><span style='font-size:28px'>${t[1]}</span>${t[2]}</button>`).join('')}</div>`},
+ return `<h2>سوپرمارکت میزبان</h2>${D.i.length&&(!D.lb||Date.now()-D.lb>6048e5)?"<div class='cd'><b class='low'>⚠️ بیش از ۷ روز است پشتیبان نگرفته‌اید</b><button class='pr' data-a='bfile'>💾 همین حالا پشتیبان بگیر</button></div>":''}<div class='cd'>فروش امروز: <b>${f(td)}</b> تومان<br>موجودی صندوق: <b>${f(cash)}</b> تومان<br>طلب از مشتری‌ها: <b>${f(D.c.reduce((s,c)=>s+Math.max(c.balance,0),0))}</b><br>بدهی به تأمین‌کننده‌ها: <b>${f(D.s.reduce((s,c)=>s+Math.max(c.balance,0),0))}</b><br>کالاهای تمام‌شده یا کم‌موجودی: <b class='low'>${f(D.p.filter(p=>p.stock<=(p.min||0)).length)}</b></div><div class='g'>${T.map(t=>`<button data-a='tab' data-i='${t[0]}'><span style='font-size:28px'>${t[1]}</span>${t[2]}</button>`).join('')}</div>`},
 buy(){return `<h2>فاکتور خرید</h2><div class='cd'><select id='bsu'><option value=''>تأمین‌کننده نقدی</option>${D.s.map(s=>`<option value='${s.id}'>${esc(s.name)}</option>`).join('')}</select><div class='row'><select id='bp'><option value=''>انتخاب کالا</option>${D.p.map(p=>`<option value='${p.id}'>${esc(p.name)}</option>`).join('')}</select><button data-a='bscan'>📷</button></div><input id='bq' inputmode='numeric' placeholder='تعداد'><input id='bc' inputmode='numeric' placeholder='قیمت خرید واحد'><input id='bpd' inputmode='numeric' placeholder='مبلغ پرداختی (خالی = کل نقد)'><button class='pr' data-a='bok'>ثبت خرید و ورود به انبار</button></div><div class='cd'><b>تأمین‌کننده جدید</b><input id='sn' placeholder='نام'><input id='sph' inputmode='tel' placeholder='تلفن'><button data-a='sadd'>ثبت</button></div>${D.s.map(s=>`<div class='cd'><b>${esc(s.name)}</b> <span class='mu'>${esc(s.phone||'')}</span><br>بدهی ما: <b class='${s.balance>0?'low':''}'>${f(s.balance)}</b><div class='row'><input id='sp${s.id}' inputmode='numeric' placeholder='مبلغ پرداخت'><button data-a='spay' data-i='${s.id}'>پرداخت</button></div></div>`).join('')}`},
 buy(){const tot=BL.reduce((s,x)=>s+x.q*x.c,0);
 return `<h2>فاکتور خرید</h2><select data-m='bs'><option value=''>تأمین‌کننده نقدی</option>${D.s.map(s=>`<option value='${s.id}' ${s.id==BS?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
@@ -94,7 +108,7 @@ sale(){const tot=cart.reduce((s,x)=>s+x.q*x.p,0);
  <button class="pr" data-a="sscan">📷 اسکن بارکد کالا</button>
  <input data-m="q" placeholder="جستجوی نام یا بارکد کالا" value="${esc(q)}"><div id="L">${LS()}</div>
  <div class="cd">${cart.length?cart.map((x,i)=>`<div class="r"><b>${esc(x.n)}</b><span>${f(x.p)}</span><span><button data-a="dec" data-i="${i}">−</button> ${f(x.q)} <button data-a="inc" data-i="${i}">+</button> <button class="dn" data-a="rm" data-i="${i}">✕</button></span></div>`).join(''):'<p class="mu">سبد خالی است</p>'}
- <h3>جمع: ${f(tot)} تومان</h3>
+ <input data-m="disc" inputmode="numeric" placeholder="تخفیف (تومان)" value="${esc(disc)}"><h3>قابل پرداخت: ${f(tot-Math.min(num(disc),tot))} تومان</h3>
  <input data-m="paid" inputmode="numeric" placeholder="مبلغ پرداختی (خالی = کل مبلغ نقد)" value="${esc(paid)}">
  <button class="pr" data-a="finish">ثبت و صدور فاکتور</button></div>`},
 prod(){const e=D.p.find(x=>x.id==ed)||{};
@@ -111,18 +125,18 @@ stock(){const low=D.p.filter(p=>p.stock<=(p.min||0));const val=D.p.reduce((s,p)=
  ${[...D.p].sort((a,b)=>a.stock-b.stock).map(p=>`<div class="r"><span>${esc(p.name)}</span><span class="${p.stock<=(p.min||0)?'low':''}">${f(p.stock)}</span></div>`).join('')||'<p class="mu">کالایی ثبت نشده است</p>'}`},
 cust(){return `<h2>مشتری‌ها</h2><div class="cd"><input id="cnm" placeholder="نام و نام خانوادگی"><input id="cph" inputmode="tel" placeholder="شماره تلفن"><button class="pr" data-a="cadd">ثبت مشتری (شماره خودکار)</button></div>
  <div class="cd"><b>کمپین پیامکی</b><textarea id="smsg" rows="2" placeholder="متن پیام (مثلاً تخفیف ویژه این هفته)"></textarea><p class="mu">روی «✉ پیامک» هر مشتری بزنید تا برنامه‌ی پیامک گوشی با این متن باز شود.</p><p>مشتریان غایب (بیش از ۳۰ روز خرید نکرده‌اند): ${gone()}</p></div>
- ${D.c.map(c=>`<div class="cd"><b>${esc(c.name)}</b> <span class="mu">شماره ${f(c.no)} · ${esc(c.phone||'')}</span><br>مانده بدهی: <b class="${c.balance>0?'low':''}">${f(c.balance)}</b> تومان · امتیاز باشگاه: <b>${f(c.pts)}</b> <button data-a="redeem" data-i="${c.id}">تبدیل به اعتبار</button> <button data-a="sms" data-i="${c.id}">✉ پیامک</button>
+ ${D.c.map(c=>`<div class="cd"><b>${esc(c.name)}</b> <span class="mu">شماره ${f(c.no)} · ${esc(c.phone||'')}</span><br>مانده بدهی: <b class="${c.balance>0?'low':''}">${f(c.balance)}</b> تومان · امتیاز باشگاه: <b>${f(c.pts)}</b> <button data-a="redeem" data-i="${c.id}">تبدیل به اعتبار</button> <button data-a="sms" data-i="${c.id}">✉ پیامک</button> <button class="dn" data-a="cdel" data-i="${c.id}">${arm==c.id?'مطمئنید؟':'حذف'}</button>
  <div class="row"><input id="pay${c.id}" inputmode="numeric" placeholder="مبلغ دریافتی"><button data-a="pay" data-i="${c.id}">دریافت</button></div></div>`).join('')||'<p class="mu">مشتری ثبت نشده است</p>'}`},
 rep(){const d0=new Date().setHours(0,0,0,0),td=D.i.filter(v=>v.t>=d0);
  return `<h2>گزارش</h2><div class="cd">فروش امروز (پس از کسر مرجوعی): <b>${f(td.reduce((s,v)=>s+v.tot-(v.rtot||0),0))}</b> تومان (${f(td.length)} فاکتور)<br>جمع بدهی مشتری‌ها: <b>${f(D.c.reduce((s,c)=>s+Math.max(c.balance,0),0))}</b> تومان</div>
  ${AN()}<h3>فاکتورها</h3>${D.i.slice(0,40).map(v=>`<div class="r"><span>${f(v.no)} · ${esc(v.cn)}</span><span>${f(v.tot)} <button data-a="inv" data-i="${v.no}">مشاهده</button></span></div>`).join('')||'<p class="mu">فاکتوری نیست</p>'}
  <h3>پشتیبان‌گیری</h3><p class="mu">اطلاعات روی همین گوشی ذخیره می‌شود. مرتب پشتیبان بگیرید.</p>
- <button data-a="bshow">نمایش و ارسال پشتیبان</button> <button data-a="bimp">بازیابی از متن</button><textarea id="bk" rows="4" placeholder="متن پشتیبان"></textarea>`}};
+ <button class="pr" data-a="bfile">💾 ذخیره‌ی فایل پشتیبان</button><p class="mu">بازیابی از فایل پشتیبان:</p><input type="file" accept=".json,application/json" data-m="bf"><button data-a="bshow">نمایش و ارسال پشتیبان</button> <button data-a="bimp">بازیابی از متن</button><textarea id="bk" rows="4" placeholder="متن پشتیبان"></textarea>`}};
 /* ---- invoice ---- */
 function invText(v){const L='────────────';
  return ['سوپرمارکت میزبان','تلفن: 09182394979',`فاکتور شماره ${f(v.no)} · ${v.date}`,`مشتری: ${v.cn}`+(v.cno?` · شماره مشتری: ${f(v.cno)}`:'')+(v.cph?` · تلفن: ${v.cph}`:''),L,
  ...v.it.map(x=>`${x.n}: ${f(x.q)} × ${f(x.p)} = ${f(x.q*x.p)}`),L,
- `جمع این فاکتور: ${f(v.tot)}`,`مانده قبلی: ${f(v.prev)}`,`جمع کل: ${f(v.grand)}`,`پرداخت‌شده: ${f(v.pd)}`,`مانده حساب: ${f(v.grand-v.pd)} تومان`].join('\n')}
+ ...(v.dc?[`جمع اقلام: ${f(v.st)}`,`تخفیف: ${f(v.dc)}`]:[]),`جمع این فاکتور: ${f(v.tot)}`,`مانده قبلی: ${f(v.prev)}`,`جمع کل: ${f(v.grand)}`,`پرداخت‌شده: ${f(v.pd)}`,`مانده حساب: ${f(v.grand-v.pd)} تومان`].join('\n')}
 function showInv(no){const v=D.i.find(x=>x.no==no);if(!v)return;
  $('#M').className='on';$('#M').innerHTML=`<div class="box"><pre id="IT">${esc(invText(v))}</pre><br><button class="pr" data-a="share" data-i="${no}">ارسال فاکتور</button><div class="row"><button data-a="prn" style="flex:1">🖨 چاپ</button><button data-a="ret" data-i="${no}" style="flex:1">↩ مرجوعی</button></div><button data-a="sx" style="width:100%">بستن</button></div>`}
 /* ---- actions ---- */
@@ -146,12 +160,12 @@ sscan(){scan(c=>{const p=D.p.find(x=>x.barcode==c);if(!p)return 'کالا یاف
 add(id){const p=D.p.find(x=>x.id==id);const x=cart.find(z=>z.id==id);x?x.q++:cart.push({id,n:p.name,p:p.sell,b:p.buy,q:1});q='';render()},
 inc(i){cart[i].q++;render()},dec(i){cart[i].q>1?cart[i].q--:cart.splice(i,1);render()},rm(i){cart.splice(i,1);render()},
 finish(){if(!cart.length)return toast('سبد خالی است');
- const c=D.c.find(x=>x.id==sc),tot=cart.reduce((s,x)=>s+x.q*x.p,0),pd=paid===''?tot:num(paid);
+ const c=D.c.find(x=>x.id==sc),st=cart.reduce((s,x)=>s+x.q*x.p,0),dc=Math.min(num(disc),st),tot=st-dc,pd=paid===''?tot:num(paid);
  if(pd<tot&&!c)return toast('برای نسیه، مشتری را انتخاب کنید');
  const prev=c?c.balance:0,n=new Date();
- const v={no:++D.n,t:+n,date:n.toLocaleDateString('fa-IR')+' '+n.toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'}),cn:c?c.name:'مشتری نقدی',cno:c?c.no:'',cph:c?c.phone:'',it:cart.map(x=>({...x})),tot,prev,pd,grand:prev+tot};
+ const v={no:++D.n,t:+n,date:n.toLocaleDateString('fa-IR')+' '+n.toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'}),cn:c?c.name:'مشتری نقدی',cno:c?c.no:'',cph:c?c.phone:'',it:cart.map(x=>({...x})),st,dc,tot,prev,pd,grand:prev+tot};
  cart.forEach(x=>{const p=D.p.find(z=>z.id==x.id);if(p)p.stock-=x.q});
- if(c){c.balance=prev+tot-pd;c.pts=(c.pts||0)+Math.floor(tot/10000)}D.i.unshift(v);tx('in',pd,'فروش فاکتور '+v.no);save();cart=[];paid='';sc='';render();showInv(v.no)},
+ if(c){c.balance=prev+tot-pd;c.pts=(c.pts||0)+Math.floor(tot/10000)}D.i.unshift(v);tx('in',pd,'فروش فاکتور '+v.no);save();cart=[];paid='';sc='';disc='';render();showInv(v.no)},
 pscan(){scan(c=>{$('#pb').value=c})},
 psave(){const n=$('#pn').value.trim();if(!n)return toast('نام کالا را بنویسید');
  const b=$('#pb').value.trim();if(b&&D.p.some(x=>x.barcode==b&&x.id!=ed))return toast('این بارکد قبلاً ثبت شده');
@@ -166,7 +180,10 @@ sin(){const p=D.p.find(x=>x.id==$('#si').value),n=num($('#sq').value);if(!p||n<=
 cadd(){const n=$('#cnm').value.trim();if(!n)return toast('نام مشتری را بنویسید');
  D.c.unshift({id:uid(),no:++D.cn,name:n,phone:$('#cph').value.trim(),balance:0});save();render()},
 pay(id){const c=D.c.find(x=>x.id==id),m=num($('#pay'+id).value);if(m<=0)return toast('مبلغ را وارد کنید');c.balance-=m;tx('in',m,'دریافت از '+c.name);save();render();toast('ثبت شد')},
-inv(no){showInv(no)},sx(){stop()},prn(){window.print()},
+inv(no){showInv(no)},
+sc2(){lib2()},
+cdel(id){const c=D.c.find(x=>x.id==id);if(c.balance)return toast('ابتدا مانده حساب مشتری باید صفر شود');if(arm!=id){arm=id;return render()}D.c=D.c.filter(x=>x.id!=id);arm='';save();render()},
+bfile(){const b=new Blob([JSON.stringify(D)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='mizban-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();D.lb=Date.now();save();render();toast('فایل پشتیبان ذخیره شد')},sx(){stop()},prn(){window.print()},
 ret(no){const v=D.i.find(x=>x.no==no);$('#M').innerHTML=`<div class="box"><h3>مرجوعی فاکتور ${f(no)}</h3>${v.it.map((x,i)=>`<div class="r"><span>${esc(x.n)} <span class="mu">(قابل مرجوعی: ${f(x.q-(x.r||0))})</span></span><input class="rq" data-i="${i}" inputmode="numeric" placeholder="تعداد" style="width:90px"></div>`).join('')}<button class="pr" data-a="retok" data-i="${no}">ثبت مرجوعی</button><button data-a="sx" style="width:100%">بستن</button></div>`},
 retok(no){const v=D.i.find(x=>x.no==no);let s=0;document.querySelectorAll('.rq').forEach(el=>{const x=v.it[el.dataset.i],n=Math.min(num(el.value),x.q-(x.r||0));if(n>0){x.r=(x.r||0)+n;s+=n*x.p;const p=D.p.find(z=>z.id==x.id);if(p)p.stock+=n}});if(!s)return toast('تعداد مرجوعی را وارد کنید');v.rtot=(v.rtot||0)+s;const c=D.c.find(z=>z.id==v.cid);if(c){c.balance-=s;c.pts=Math.max(0,(c.pts||0)-Math.floor(s/10000))}save();stop();render();toast('مرجوعی ثبت شد: '+f(s)+' تومان')},
 redeem(id){const c=D.c.find(x=>x.id==id);if(!c.pts)return toast('امتیازی ندارد');const m=c.pts*500;c.balance-=m;c.pts=0;save();render();toast('اعتبار '+f(m)+' تومان ثبت شد')},
@@ -180,8 +197,9 @@ bimp(){try{const d=JSON.parse($('#bk').value);if(!d.p||!d.c||!d.i)throw 0;D=d;fi
 /* ---- wiring ---- */
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b)A[b.dataset.a](b.dataset.i,b)});
 document.addEventListener('input',e=>{if(e.target.dataset.m=='q'){q=e.target.value;$('#L').innerHTML=LIST[tab]()}});
-document.addEventListener('change',e=>{const m=e.target.dataset.m;if(m=='sc')sc=e.target.value;if(m=='paid')paid=e.target.value;if(m=='bs')BS=e.target.value;if(m=='bp')BP=e.target.value;if(m=='bpd')BD=e.target.value;if(m=='bq'){BL[e.target.dataset.i].q=num(e.target.value);render()}if(m=='bcst'){BL[e.target.dataset.i].c=num(e.target.value);render()}});
+document.addEventListener('change',e=>{const m=e.target.dataset.m;if(m=='sc')sc=e.target.value;if(m=='paid')paid=e.target.value;if(m=='bs')BS=e.target.value;if(m=='bp')BP=e.target.value;if(m=='bpd')BD=e.target.value;if(m=='bq'){BL[e.target.dataset.i].q=num(e.target.value);render()}if(m=='bcst'){BL[e.target.dataset.i].c=num(e.target.value);render()}if(m=='disc'){disc=e.target.value;render()}if(m=='bf'&&e.target.files[0]){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.p||!d.c||!d.i)throw 0;D=d;fix();save();render();toast('اطلاعات بازیابی شد')}catch(x){toast('فایل پشتیبان معتبر نیست')}};r.readAsText(e.target.files[0])}});
 function render(){$('#app').innerHTML=V[tab]();$('#nav').innerHTML=TABS.map(t=>`<button class="${t[0]==tab?'on':''}" data-a="tab" data-i="${t[0]}">${t[1]}</button>`).join('')}
 render();
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
